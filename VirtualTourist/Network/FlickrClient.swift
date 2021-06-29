@@ -17,7 +17,7 @@ class FlickrClient {
         static let defaultOrder = "-updatedAt"
         static var loggedUser = ""
         static let method = "flickr.photos.search"
-        static let api_key = "201ac6b1864f151ed192e2ace404ce0d"
+        static let api_key = ""
         static let radius = 1
         static let radius_units = "km"
         static let format = "json"
