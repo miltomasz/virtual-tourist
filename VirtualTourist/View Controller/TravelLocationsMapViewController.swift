@@ -38,6 +38,7 @@ class TravelLocationsMapViewController: UIViewController, UIGestureRecognizerDel
         
         photoAlbumViewController.coordinate = selectedPinCoordinate
         photoAlbumViewController.pin = selectedPin
+        photoAlbumViewController.pages = 1
         photoAlbumViewController.dataController = dataController
     }
     

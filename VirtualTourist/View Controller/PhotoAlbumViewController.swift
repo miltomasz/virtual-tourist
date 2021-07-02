@@ -36,6 +36,7 @@ class PhotoAlbumViewController: UIViewController {
     var pin: Pin?
     let pinFetchRequest: NSFetchRequest<Pin> = Pin.fetchRequest()
     var dataController: DataController?
+    var pages: Int = 1
     
     var coordinate: CLLocationCoordinate2D? {
         didSet {
@@ -95,7 +96,7 @@ class PhotoAlbumViewController: UIViewController {
                     newCollectionButton.isEnabled = true
                     NetworkHelper.showLoader(false, activityIndicator: activityIndicator)
                 } else {
-                    FlickrClient.getPhotosForLocation(latitude: latitude, longitude: longitude, completion: handlePhotosResponse(results:error:))
+                    FlickrClient.getPhotosForLocation(latitude: latitude, longitude: longitude, pages: pages, completion: handlePhotosResponse(results:error:))
                 }
                 
             } else {
@@ -126,10 +127,34 @@ class PhotoAlbumViewController: UIViewController {
         }
         
         if let photoArray = photos.photo, !photoArray.isEmpty {
+            pages = photos.pages
             reloadPhotoCollectionView(with: .placeholders(photoArray.count))
-            savePhotos(photoArray)
+            FlickrClient.getPhoto(from: photoArray, completion: handleSavingAction(urls:error:))
         } else {
             NetworkHelper.showFailurePopup(title: "No photos found", message: error?.localizedDescription ?? "", on: self)
+        }
+    }
+    
+    private func handleSavingAction(urls: [URL: Data?], error: Error?) {
+        guard let dataController = dataController else { return }
+         
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            urls.forEach { url, image in
+                let photo = Photo(context: dataController.viewContext)
+                
+                photo.fileUri = url
+                photo.pin = self?.pin
+                photo.creationDate = Date()
+                photo.image = image
+                
+                do {
+                    try dataController.viewContext.save()
+                } catch {
+                    debugPrint("Could not save file: \(error)")
+                }
+            }
+            
+            self?.showPhotos()
         }
     }
     
@@ -152,39 +177,6 @@ class PhotoAlbumViewController: UIViewController {
         
         photoCollectionView.reloadSections(IndexSet(integer: 0))
         photoCollectionView.reloadData()
-    }
-    
-    private func savePhotos(_ photoArray: [PhotoModel]) {
-        guard let dataController = dataController else { return }
-         
-        DispatchQueue.global(qos: .background).async { [weak self] in
-            photoArray.forEach { image in
-                let photo = Photo(context: dataController.viewContext)
-                let fileUri = PhotoUtility.constructPhotoURL(image)
-                
-                photo.fileUri = fileUri
-                photo.name = image.title
-                photo.pin = self?.pin
-                photo.creationDate = Date()
-                
-                do {
-                    try dataController.viewContext.save()
-                    
-                    let fileName = fileUri?.absoluteString ?? "placeholder.png"
-                    let localFileName = fileUri?.absoluteString.components(separatedBy: "/").last ?? "placeholder.png"
-                    
-                    guard let documentsUrl = self?.documentDirectoryUrl?.appendingPathComponent(localFileName),
-                          let url = URL(string: fileName),
-                          let data = try? Data(contentsOf: url) else { return }
-                    
-                    try data.write(to: documentsUrl)
-                } catch {
-                    debugPrint("Could not save file: \(error)")
-                }
-            }
-            
-            self?.showPhotos()
-        }
     }
     
     private func showPhotos() {
@@ -211,12 +203,6 @@ class PhotoAlbumViewController: UIViewController {
         do {
             let photos = try dataController.viewContext.fetch(photoFetchRequest)
             try photos.forEach { photo in
-                let fileUri = photo.fileUri
-                let localFileName = fileUri?.absoluteString.components(separatedBy: "/").last ?? "placeholder.png"
-                
-                guard let documentsUrl = documentDirectoryUrl?.appendingPathComponent(localFileName) else { return }
-                
-                try fileManager.removeItem(at: documentsUrl)
                 dataController.viewContext.delete(photo)
                 try dataController.viewContext.save()
             }
@@ -245,7 +231,7 @@ class PhotoAlbumViewController: UIViewController {
                 return
             }
             
-            FlickrClient.getPhotosForLocation(latitude: latitude, longitude: longitude, completion: handlePhotosResponse(results:error:))
+            FlickrClient.getPhotosForLocation(latitude: latitude, longitude: longitude, pages: pages, completion: handlePhotosResponse(results:error:))
         })
     }
 
@@ -303,9 +289,9 @@ extension PhotoAlbumViewController: UICollectionViewDataSource {
             cell.imageView.image = UIImage(named: "placeholder")
         case .realItems:
             guard let photo = photoFetchedResultsController?.object(at: indexPath), let photoFileUri = photo.fileUri else { return PhotoViewCell() }
-            
-            let localFileName = photoFileUri.absoluteString.components(separatedBy: "/").last ?? "placeHolder.png"
-            guard let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last?.appendingPathComponent(localFileName),  let data = try? Data(contentsOf: documentsUrl) else { return PhotoViewCell() }
+            guard let data = photo.image else { return PhotoViewCell() }
+//            let localFileName = photoFileUri.absoluteString.components(separatedBy: "/").last ?? "placeHolder.png"
+//            guard let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last?.appendingPathComponent(localFileName),  let data = try? Data(contentsOf: documentsUrl) else { return PhotoViewCell() }
                 
             cell.imageView.image = UIImage(data: data)
         }

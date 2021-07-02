@@ -28,15 +28,16 @@ class FlickrClient {
     enum Endpoints {
         static let base = "https://www.flickr.com/services/rest/?"
         
-        case getPhotosForLocation(_ lat: Double?, _ lon: Double?)
+        case getPhotosForLocation(_ lat: Double?, _ lon: Double?, pages: Int)
         
         var stringValue: String {
             switch self {
-            case .getPhotosForLocation(let lat, let lon):
+            case .getPhotosForLocation(let lat, let lon, let pages):
                 let latitude = lat ?? 0.0
                 let longitude = lon ?? 0.0
+                let page = Int.random(in: 1...pages)
                 
-                return Endpoints.base + "method=\(Parameter.method)&api_key=\(Parameter.api_key)&lat=\(latitude)&lon=\(longitude)&radius=\(Parameter.radius)&radius_units=\(Parameter.radius_units)&format=\(Parameter.format)&nojsoncallback=1&per_page=25"
+                return Endpoints.base + "method=\(Parameter.method)&api_key=\(Parameter.api_key)&lat=\(latitude)&lon=\(longitude)&radius=\(Parameter.radius)&radius_units=\(Parameter.radius_units)&format=\(Parameter.format)&nojsoncallback=1&per_page=25&page=\(page)"
             }
         }
         
@@ -78,13 +79,35 @@ class FlickrClient {
         }
     }
     
-    class func getPhotosForLocation(latitude: Double, longitude: Double, completion: @escaping (Photos?, Error?) -> Void) {
-        taskForGETRequest(url: Endpoints.getPhotosForLocation(latitude, longitude).url, responseType: SearchPhotosResponse.self) { response, error in
+    class func getPhotosForLocation(latitude: Double, longitude: Double, pages: Int, completion: @escaping (Photos?, Error?) -> Void) {
+        taskForGETRequest(url: Endpoints.getPhotosForLocation(latitude, longitude, pages: pages).url, responseType: SearchPhotosResponse.self) { response, error in
             if let response = response {
                 completion(response.photos, nil)
             } else {
                 completion(nil, error)
             }
+        }
+    }
+     
+    class func getPhoto(from photoArray: [PhotoModel], completion: @escaping ([URL: Data?], Error?) -> Void) {
+        var urlDataDict = [URL: Data?]()
+        
+        DispatchQueue.global(qos: .background).async {
+            photoArray.forEach { photoModel in
+                let fileUri = PhotoUtility.constructPhotoURL(photoModel)
+                let fileName = fileUri?.absoluteString ?? "placeholder.png"
+                
+                guard let url = URL(string: fileName) else {
+                    completion([:], nil)
+                    return
+                }
+                
+                let data = try? Data(contentsOf: url)
+                
+                urlDataDict.updateValue(data, forKey: url)
+            }
+            
+            completion(urlDataDict, nil)
         }
     }
     
